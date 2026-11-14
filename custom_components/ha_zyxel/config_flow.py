@@ -1,17 +1,13 @@
 """Config flow for Zyxel integration."""
 import logging
+from typing import Any
+from urllib.parse import urlsplit
 
 import voluptuous as vol
 
-from homeassistant import config_entries, core
+from homeassistant import config_entries, core, exceptions
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 
-from .api import (
-    ZyxelAuthenticationError,
-    ZyxelConnectionError,
-    create_router,
-    fetch_status,
-)
 from .const import DEFAULT_HOST, DEFAULT_USERNAME, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,24 +25,56 @@ DATA_SCHEMA = vol.Schema(
 )
 
 
-async def validate_input(hass: core.HomeAssistant, data):
-    """Validate that the user input allows us to connect."""
+def _normalize_host(host: str) -> str | None:
+    """Normalize and validate a router URL without changing its scheme."""
+    host = host.strip()
+    if not host:
+        return None
+    if "://" not in host:
+        host = f"https://{host}"
 
     try:
-        # Create router instance and test connection
+        parsed = urlsplit(host)
+        parsed.port
+    except ValueError:
+        return None
+
+    if (
+        parsed.scheme.lower() not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        return None
+
+    return f"{parsed.scheme.lower()}://{parsed.netloc}".rstrip("/")
+
+
+async def validate_input(hass: core.HomeAssistant, data):
+    """Validate that the user input allows us to connect."""
+    try:
+        from nr7101 import nr7101
+
         router = await hass.async_add_executor_job(
-            create_router,
+            nr7101.NR7101,
             data[CONF_HOST],
             data[CONF_USERNAME],
-            data[CONF_PASSWORD]
+            data[CONF_PASSWORD],
         )
 
-        await hass.async_add_executor_job(fetch_status, router)
-    except (ZyxelAuthenticationError, ZyxelConnectionError):
+        if not await hass.async_add_executor_job(router.login):
+            raise InvalidAuth
+
+        if not await hass.async_add_executor_job(router.get_status):
+            raise CannotConnect
+    except (InvalidAuth, CannotConnect):
         raise
     except Exception as ex:
-        _LOGGER.error("Unable to connect to Zyxel device: %s", ex)
-        raise ZyxelConnectionError from ex
+        _LOGGER.debug("Zyxel connection check failed: %s", type(ex).__name__)
+        raise CannotConnect from ex
 
     return {"title": f"Zyxel device: ({data[CONF_HOST]})"}
 
@@ -56,45 +84,42 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    async def async_step_user(self, user_input=None):
+    async def async_step_user(self, user_input: dict[str, Any] | None = None):
         """Handle the initial step."""
-        errors = {}
-        success = False
+        if user_input is None:
+            return self.async_show_form(step_id="user", data_schema=DATA_SCHEMA)
 
-        if user_input is not None:
-            host = user_input[CONF_HOST]
-
-            # sanitize entry
-            if not host.startswith("http://") and not host.startswith("https://"):
-                host = f"https://{host}"
-                user_input[CONF_HOST] = host
-
-            try:
-                info = await validate_input(self.hass, user_input)
-                success = True
-            except ZyxelAuthenticationError:
-                errors["base"] = "invalid_auth"
-            except ZyxelConnectionError as err:
-                _LOGGER.error("Connection attempt failed: %s", err)
-                errors["base"] = "cannot_connect"
-
-            if not success and "https" not in user_input["host"]:
-                _LOGGER.info("User specified http but it failed, trying https...")
-                user_input["host"] = user_input["host"].replace("http://", "https://")
-                try:
-                    info = await validate_input(self.hass, user_input)
-                    success = True
-                except ZyxelAuthenticationError:
-                    errors["base"] = "invalid_auth"
-                except ZyxelConnectionError:
-                    errors["base"] = "cannot_connect"
-                except Exception as e:  # pylint: disable=broad-except
-                    _LOGGER.exception("Second attempt failed: %s", e)
-                    errors["base"] = "unknown"
-
-        if success:
-            return self.async_create_entry(title=info["title"], data=user_input)
-        else:
+        host = _normalize_host(user_input[CONF_HOST])
+        if host is None:
             return self.async_show_form(
-                step_id="user", data_schema=DATA_SCHEMA, errors=errors
+                step_id="user",
+                data_schema=DATA_SCHEMA,
+                errors={"base": "invalid_host"},
             )
+
+        data = {**user_input, CONF_HOST: host}
+        self._async_abort_entries_match({CONF_HOST: host})
+
+        try:
+            info = await validate_input(self.hass, data)
+        except InvalidAuth:
+            errors = {"base": "invalid_auth"}
+        except CannotConnect:
+            errors = {"base": "cannot_connect"}
+        except Exception as err:  # pylint: disable=broad-except
+            _LOGGER.error("Unexpected config-flow error: %s", type(err).__name__)
+            errors = {"base": "unknown"}
+        else:
+            return self.async_create_entry(title=info["title"], data=data)
+
+        return self.async_show_form(
+            step_id="user", data_schema=DATA_SCHEMA, errors=errors
+        )
+
+
+class CannotConnect(exceptions.HomeAssistantError):
+    """Error to indicate the router cannot be reached or queried."""
+
+
+class InvalidAuth(exceptions.HomeAssistantError):
+    """Error to indicate that router authentication failed."""
