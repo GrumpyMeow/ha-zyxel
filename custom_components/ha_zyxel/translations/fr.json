@@ -10,6 +10,7 @@
       }
     },
     "error": {
+      "invalid_host": "Saisissez un hôte HTTP ou HTTPS valide, sans chemin",
       "cannot_connect": "La connexion a échoué",
       "invalid_auth": "L'authentification a échoué",
       "unknown": "Une erreur inattendue s'est produite"

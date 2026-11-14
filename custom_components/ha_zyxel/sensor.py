@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -13,10 +12,13 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from custom_components.ha_zyxel.const import DOMAIN
-from custom_components.ha_zyxel.device_info import build_device_info
+from .entity import (
+    ZyxelCoordinatorEntity,
+    get_parent_device_id,
+    sync_subdevice_areas,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -120,26 +122,61 @@ KNOWN_SENSORS = {
         "device_class": SensorDeviceClass.SIGNAL_STRENGTH,
         "state_class": SensorStateClass.MEASUREMENT
     },
-    "X_ZYXEL_TEMPERATURE_AMBIENT": {
+    "TEMPERATURE_AMBIENT": {
         "name": "Ambient Temperature",
         "unit": "°C",
         "icon": "mdi:thermometer",
         "device_class": SensorDeviceClass.TEMPERATURE,
         "state_class": SensorStateClass.MEASUREMENT
     },
-    "X_ZYXEL_TEMPERATURE_SDX": {
+    "TEMPERATURE_SDX": {
         "name": "SDX Temperature",
         "unit": "°C",
         "icon": "mdi:thermometer",
         "device_class": SensorDeviceClass.TEMPERATURE,
         "state_class": SensorStateClass.MEASUREMENT
     },
-    "X_ZYXEL_TEMPERATURE_CPU0": {
+    "TEMPERATURE_CPU0": {
         "name": "CPU Temperature",
         "unit": "°C",
         "icon": "mdi:thermometer",
         "device_class": SensorDeviceClass.TEMPERATURE,
         "state_class": SensorStateClass.MEASUREMENT
+    },
+    "PhyCellID": {
+        "name": "Physical Cell ID",
+        "unit": None,
+        "icon": "mdi:antenna",
+        "device_class": None,
+        "state_class": None,
+    },
+    "CELL_Roaming_Enable": {
+        "name": "Roaming Enabled",
+        "type": "boolean",
+        "unit": None,
+        "icon": "mdi:toggle-switch",
+        "device_class": None,
+        "state_class": None,
+    },
+    "EasyMeshEnable": {
+        "name": "Easy Mesh Enabled",
+        "type": "boolean",
+        "unit": None,
+        "icon": "mdi:toggle-switch",
+        "device_class": None,
+        "state_class": None,
+    },
+    
+}
+
+KNOWN_TYPES = {
+    "Enable": {
+        "name": "Enabled",
+        "type": "boolean",
+        "unit": None,
+        "icon": "mdi:toggle-switch",
+        "device_class": None,
+        "state_class": None,
     },
     "BytesSent": {
         "name": "Bytes Sent",
@@ -155,72 +192,189 @@ KNOWN_SENSORS = {
         "device_class": SensorDeviceClass.DATA_SIZE,
         "state_class": SensorStateClass.TOTAL_INCREASING,
     },
+    "PacketsSent": {
+        "name": "Packets Sent",
+        "unit": "packets",
+        "icon": "mdi:counter",
+        "device_class": None,
+        "state_class": SensorStateClass.TOTAL_INCREASING,
+    },
+    "PacketsReceived": {
+        "name": "Packets Received",
+        "unit": "packets",
+        "icon": "mdi:counter",
+        "device_class": None,
+        "state_class": SensorStateClass.TOTAL_INCREASING,
+    },
+    "SINR": {
+        "name": "Cellular Signal-to-Noise Ratio",
+        "unit": "dB",
+        "icon": "mdi:signal",
+        "device_class": SensorDeviceClass.SIGNAL_STRENGTH,
+        "state_class": SensorStateClass.MEASUREMENT,
+    },
+    "RSRQ": {
+        "name": "Cellular Reference Signal Received Quality",
+        "unit": "dB",
+        "icon": "mdi:signal",
+        "device_class": SensorDeviceClass.SIGNAL_STRENGTH,
+        "state_class": SensorStateClass.MEASUREMENT,
+    },
+    "RSSI": {
+        "name": "Cellular RSSI",
+        "unit": "dBm",
+        "icon": "mdi:signal",
+        "device_class": SensorDeviceClass.SIGNAL_STRENGTH,
+        "state_class": SensorStateClass.MEASUREMENT,
+    },
+    "RSRP": {
+        "name": "Cellular Reference Signal Received Power",
+        "unit": "dBm",
+        "icon": "mdi:signal",
+        "device_class": SensorDeviceClass.SIGNAL_STRENGTH,
+        "state_class": SensorStateClass.MEASUREMENT,
+    },
+    "MCC": {
+        "name": "Mobile Country Code",
+        "unit": None,
+        "icon": "mdi:identifier",
+        "device_class": None,
+        "state_class": None,
+    },
+    "MNC": {
+        "name": "Mobile Network Code",
+        "unit": None,
+        "icon": "mdi:identifier",
+        "device_class": None,
+        "state_class": None,
+    },
+    "RFCN": {
+        "name": "RF Channel Number",
+        "unit": None,
+        "icon": "mdi:radio-tower",
+        "device_class": None,
+        "state_class": None,
+    },
+    "CPUUsage": {
+        "name": "CPU Usage",
+        "unit": "%",
+        "icon": "mdi:chip",
+        "device_class": None,
+        "state_class": SensorStateClass.MEASUREMENT,
+    },    
+    "ProcessNumberOfEntries": {
+        "name": "Process Number of Entries",
+        "unit": None,
+        "icon": "mdi:chip",
+        "device_class": None,
+        "state_class": SensorStateClass.MEASUREMENT,
+    },    
+    "temperature": {
+        "name": "Temperature",
+        "unit": "°C",
+        "icon": "mdi:thermometer",
+        "device_class": SensorDeviceClass.TEMPERATURE,
+        "state_class": SensorStateClass.MEASUREMENT
+    },
+    "voltage": {
+        "name": "Voltage",
+        "unit": "V",
+        "icon": "mdi:flash",
+        "device_class": SensorDeviceClass.VOLTAGE,
+        "state_class": SensorStateClass.MEASUREMENT
+    },
+    "ErrorsSent": {
+        "name": "Errors Sent",
+        "unit": "errors",
+        "icon": "mdi:alert",
+        "device_class": None,
+        "state_class": SensorStateClass.TOTAL_INCREASING,
+    },
+    "ErrorsReceived": {
+        "name": "Errors Received",
+        "unit": "errors",
+        "icon": "mdi:alert",
+        "device_class": None,
+        "state_class": SensorStateClass.TOTAL_INCREASING,
+    },
+    "DiscardPacketsSent": {
+        "name": "Discard Packets Sent",
+        "unit": "packets",
+        "icon": "mdi:alert",
+        "device_class": None,
+        "state_class": SensorStateClass.TOTAL_INCREASING,
+    },
+    "DiscardPacketsReceived": {
+        "name": "Discard Packets Received",
+        "unit": "packets",
+        "icon": "mdi:alert",
+        "device_class": None,
+        "state_class": SensorStateClass.TOTAL_INCREASING,
+    },
+    "MulticastPacketsSent": {
+        "name": "Multicast Packets Sent",
+        "unit": "packets",
+        "icon": "mdi:alert",
+        "device_class": None,
+        "state_class": SensorStateClass.TOTAL_INCREASING,
+    },
+    "MulticastPacketsReceived": {
+        "name": "Multicast Packets Received",
+        "unit": "packets",
+        "icon": "mdi:alert",
+        "device_class": None,
+        "state_class": SensorStateClass.TOTAL_INCREASING,
+    },
+    "UnicastPacketsSent": {
+        "name": "Unicast Packets Sent",
+        "unit": "packets",
+        "icon": "mdi:alert",
+        "device_class": None,
+        "state_class": SensorStateClass.TOTAL_INCREASING,
+    },
+    "UnicastPacketsReceived": {
+        "name": "Unicast Packets Received",
+        "unit": "packets",
+        "icon": "mdi:counter",
+        "device_class": None,
+        "state_class": SensorStateClass.TOTAL_INCREASING,
+    },
+    "UnknownProtoPacketsSent": {
+        "name": "Unknown Protocol Packets Sent",
+        "unit": "packets",
+        "icon": "mdi:counter",
+        "device_class": None,
+        "state_class": SensorStateClass.TOTAL_INCREASING,
+    },
+    "UnknownProtoPacketsReceived": {
+        "name": "Unknown Protocol Packets Received",
+        "unit": "packets",
+        "icon": "mdi:counter",
+        "device_class": None,
+        "state_class": SensorStateClass.TOTAL_INCREASING,
+    },
+    "Total": {
+        "name": "Total",
+        "unit": None,
+        "icon": "mdi:counter",
+        "device_class": None,
+        "state_class": SensorStateClass.TOTAL_INCREASING,
+    },
+    "Free": {
+        "name": "Free",
+        "unit": None,
+        "icon": "mdi:counter",
+        "device_class": None,
+        "state_class": SensorStateClass.MEASUREMENT,
+    },
+    "UpTime": {
+        "name": "Up Time",
+        "unit": None,
+        "icon": "mdi:counter",
+        "device_class": None,
+        "state_class": SensorStateClass.TOTAL_INCREASING,
+    },
 }
-
-
-# Top-level keys of the coordinator data, see api._ENDPOINTS.
-SECTION_NAMES = {
-    "cellular": "Cellular",
-    "traffic": "Traffic",
-    "cardpage": "Overview",
-    "lan": "LAN",
-    "lanhosts": "LAN hosts",
-    "wifi_mesh": "Wi-Fi mesh",
-    "one_connect": "OneConnect",
-    "device": "Device",
-}
-
-# Generic sensors are created for every scalar the modem reports (hundreds,
-# mostly static configuration). Only these stay enabled by default; the rest
-# are created disabled and can be enabled from the entity registry. Everything
-# in the "cellular" section is always enabled by default.
-ENABLED_BY_DEFAULT = {
-    "device.DeviceInfo.UpTime",
-    "device.DeviceInfo.SoftwareVersion",
-    "device.DeviceInfo.ModelName",
-    "device.SystemInfo.CPUUsage",
-    "device.SystemInfo.Free",
-    "device.SystemInfo.Total",
-    "device.WanRate_RX",
-    "device.WanRate_TX",
-    "device.WanType",
-    "lanhosts.wanInfo.wanStatus",
-}
-
-_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
-
-
-def _humanize(token: str) -> str:
-    """Turn a raw key such as 'X_ZYXEL_InterfaceUpTime' into 'Interface Up Time'."""
-    token = re.sub(r"^X_(ZYXEL_)?", "", token)
-    words = []
-    for part in token.split("_"):
-        words.extend(_CAMEL_BOUNDARY.sub(" ", part).split())
-    return " ".join(words).replace("Wi Fi", "Wi-Fi")
-
-
-def _readable_name(key: str, leaf: str | None = None) -> str:
-    """Build a readable, unique name from a flattened key.
-
-    ``traffic.br0.BytesReceived`` -> ``Traffic br0 Bytes Received``. ``leaf``
-    replaces the last path element (used for known sensors with curated names).
-    """
-    section, *path = key.split(".")
-    if leaf is not None:
-        path = path[:-1]
-    parts = [SECTION_NAMES.get(section, _humanize(section))]
-    # Skip empty path elements (the modem reports one traffic entry with no
-    # interface name), otherwise the name contains a double space.
-    parts.extend(h for h in (_humanize(p) for p in path) if h)
-    # "Device" + "Device Info ..." would read "Device Device Info ...".
-    if len(parts) > 1 and parts[1].split(" ")[0] == parts[0]:
-        parts = parts[:1] + [parts[1].removeprefix(parts[0]).strip()] + parts[2:]
-    if leaf is not None:
-        # Curated names such as "Cellular RSSI" already carry the section.
-        if len(parts) == 1 and leaf.startswith(parts[0]):
-            parts = []
-        parts.append(leaf)
-    return " ".join(parts)
 
 
 def _flatten_dict(d: dict, parent_key: str = "") -> dict:
@@ -235,28 +389,34 @@ def _flatten_dict(d: dict, parent_key: str = "") -> dict:
     return dict(items)
 
 
-def _is_duplicate(key: str, data: dict) -> bool:
-    """Return True if an "Overview" value just repeats the "Device" section."""
-    section, _, path = key.partition(".")
-    if section != "cardpage":
-        return False
-    device = data.get("device")
-    for part in path.split("."):
-        if not isinstance(device, dict) or part not in device:
-            return False
-        device = device[part]
-    return device == _get_path(data["cardpage"], path)
-
-
-def _get_path(data: dict, path: str) -> Any:
-    for part in path.split("."):
-        data = data[part]
-    return data
-
-
 def _is_value_scalar(value: Any) -> bool:
     """Check if a value is a scalar (string, number, bool)."""
     return isinstance(value, (str, int, float, bool)) or value is None
+
+
+def _device_group_for_key(key: str) -> str | None:
+    """Return the first path component, except for router-level device data."""
+    group, separator, _ = key.partition(".")
+    return group if separator and group and group != "device" else None
+
+
+def _sensor_config_for_key(key: str) -> dict | None:
+    """Return configured sensor metadata for a flattened data key."""
+    key_parts = key.split(".")
+    sensor_name = key_parts[-1]
+    sensor_group = key_parts[-2] if len(key_parts) > 2 else None
+
+    if sensor_name.startswith("X_ZYXEL_"):
+        sensor_name = sensor_name[len("X_ZYXEL_") :]
+
+    sensor_config = KNOWN_SENSORS.get(sensor_name)
+    if not sensor_config and len(key_parts) > 1:
+        sensor_config = KNOWN_TYPES.get(sensor_name)
+        if sensor_config:
+            sensor_config = dict(sensor_config)
+            if sensor_group:
+                sensor_config["name"] = f"{sensor_group} {sensor_config['name']}"
+    return sensor_config
 
 
 async def async_setup_entry(
@@ -268,39 +428,54 @@ async def async_setup_entry(
     if not coordinator.data:
         return
 
+    flattened_data = _flatten_dict(coordinator.data)
+    parent_device_id = get_parent_device_id(hass, entry, flattened_data)
+    device_groups = {
+        device_group
+        for key, value in flattened_data.items()
+        if _is_value_scalar(value)
+        if (device_group := _device_group_for_key(key)) is not None
+    }
+    parent_area = sync_subdevice_areas(
+        hass, entry, parent_device_id, device_groups
+    )
+
     sensors = []
 
     # Process all keys in the JSON and create sensors for them
     # We'll use a flat structure for simplicity
-    for key, value in _flatten_dict(coordinator.data).items():
+    for key, value in flattened_data.items():
         # Skip non-scalar values
         if not _is_value_scalar(value):
             continue
 
-        # The Overview and Device sections report many identical values.
-        if _is_duplicate(key, coordinator.data):
-            continue
-
-        # Check if this is a known sensor type
-        sensor_config = KNOWN_SENSORS.get(key.split(".")[-1], None)
+        _LOGGER.debug("Key: %s", key)
+        device_group = _device_group_for_key(key)
+        sensor_config = _sensor_config_for_key(key)
 
         if sensor_config:
-            # Create a configured sensor for known types
+            if sensor_config.get("type") == "boolean":
+                continue
             sensors.append(
                 ConfiguredZyxelSensor(
                     coordinator,
                     entry,
                     key,
-                    sensor_config
+                    sensor_config,
+                    device_group,
+                    parent_device_id,
+                    parent_area,
                 )
             )
         else:
-            # Create a generic sensor for unknown types
             sensors.append(
                 GenericZyxelSensor(
                     coordinator,
                     entry,
-                    key
+                    key,
+                    device_group,
+                    parent_device_id,
+                    parent_area,
                 )
             )
 
@@ -308,49 +483,29 @@ async def async_setup_entry(
         async_add_entities(sensors)
 
 
-class AbstractZyxelSensor(CoordinatorEntity, SensorEntity):
+class AbstractZyxelSensor(ZyxelCoordinatorEntity, SensorEntity):
     """Base class for Zyxel device sensors."""
-
-    # The device name already says "Zyxel", so entity names omit the prefix.
-    _attr_has_entity_name = True
-
-    def __init__(self, coordinator, entry: ConfigEntry, key: str):
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        self._key = key
-        self._attr_unique_id = f"{entry.entry_id}_{key}"
-        self._attr_device_info = build_device_info(entry, coordinator.data)
-
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        if not self.coordinator.last_update_success:
-            return False
-
-        # Check if the key exists in the data
-        try:
-            self._get_value_from_path()
-            return True
-        except (KeyError, AttributeError):
-            return False
-
-    def _get_value_from_path(self) -> Any:
-        """Get a value from nested dictionaries using the flattened key."""
-        keys = self._key.split(".")
-        value = self.coordinator.data
-        for k in keys:
-            value = value[k]
-        return value
 
 
 class ConfiguredZyxelSensor(AbstractZyxelSensor):
     """Representation of a configured Zyxel sensor."""
 
-    def __init__(self, coordinator, entry: ConfigEntry, key: str, config: dict):
+    def __init__(
+        self,
+        coordinator,
+        entry: ConfigEntry,
+        key: str,
+        config: dict,
+        device_group: str | None = None,
+        parent_device_id: str | None = None,
+        suggested_area: str | None = None,
+    ):
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, key)
+        super().__init__(
+            coordinator, entry, key, device_group, parent_device_id, suggested_area
+        )
         self._config = config
-        self._attr_name = _readable_name(key, config["name"])
+        self._attr_name = f"Zyxel {config['name']}"
         self._attr_native_unit_of_measurement = config["unit"]
         self._attr_icon = config["icon"]
         self._attr_device_class = config["device_class"]
@@ -368,17 +523,13 @@ class ConfiguredZyxelSensor(AbstractZyxelSensor):
 class GenericZyxelSensor(AbstractZyxelSensor):
     """Representation of a generic Zyxel sensor."""
 
-    def __init__(self, coordinator, entry: ConfigEntry, key: str):
-        """Initialize the sensor."""
-        super().__init__(coordinator, entry, key)
-        self._attr_entity_registry_enabled_default = (
-            key in ENABLED_BY_DEFAULT or key.startswith("cellular.")
-        )
-
     @property
     def name(self):
         """Return the name of the sensor."""
-        return _readable_name(self._key)
+        name_parts = self._key.split(".")
+        if len(name_parts) > 1:
+            name_parts = name_parts[1:]
+        return f"Zyxel {'.'.join(name_parts)}"
 
     @property
     def state(self):

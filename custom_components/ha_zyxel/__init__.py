@@ -9,7 +9,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from custom_components.ha_zyxel.api import create_router, fetch_status
 from custom_components.ha_zyxel.const import (
     CONF_HOST,
     CONF_PASSWORD,
@@ -24,20 +23,22 @@ _LOGGER = logging.getLogger(__name__)
 nr7101_logger = logging.getLogger("nr7101.nr7101")
 nr7101_logger.setLevel(logging.WARNING)
 
-PLATFORMS = ["sensor", "button", "switch"]
+PLATFORMS = ["sensor", "binary_sensor", "button", "switch"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Zyxel integration from a config entry."""
 
 
-    host = entry.data[CONF_HOST]
+    endpoint = entry.data[CONF_HOST]
     username = entry.data[CONF_USERNAME]
     password = entry.data[CONF_PASSWORD]
 
     try:
+        from .api import create_router, fetch_status
+
         router = await hass.async_add_executor_job(
-            create_router, host, username, password
+            create_router, endpoint, username, password
         )
     except Exception as ex:
         _LOGGER.error("Could not connect to Zyxel router: %s", ex)
@@ -46,22 +47,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def async_update_data():
         """Fetch data from the router."""
         try:
-            # A full poll takes 7-10s on some models; never abandon one mid-flight,
-            # otherwise the next poll logs in again and invalidates its session.
-            async with async_timeout.timeout(90):
-                def get_all_data():
-                    data = fetch_status(router)
-
-                    if not data:
-                        raise UpdateFailed("No data received from router")
-
-                    return data
-
-                return await hass.async_add_executor_job(get_all_data)
+            async with async_timeout.timeout(15):
+                return await hass.async_add_executor_job(fetch_status, router)
         except asyncio.TimeoutError:
             raise UpdateFailed("Router data fetch timed out")
         except Exception as err:
-            router.sessionkey = None
             raise UpdateFailed(f"Error communicating with router: {err}") from err
 
     coordinator = DataUpdateCoordinator(

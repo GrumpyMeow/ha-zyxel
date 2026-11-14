@@ -10,6 +10,7 @@
       }
     },
     "error": {
+      "invalid_host": "Enter a valid HTTP or HTTPS host without a path",
       "cannot_connect": "Failed to connect",
       "invalid_auth": "Invalid authentication",
       "unknown": "Unexpected error"
