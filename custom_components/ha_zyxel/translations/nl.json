@@ -1,0 +1,22 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "host": "Hostnaam",
+          "username": "Gebruikersnaam (meestal 'admin')",
+          "password": "Wachtwoord"
+        }
+      }
+    },
+    "error": {
+      "invalid_host": "Voer een geldige HTTP- of HTTPS-host in, zonder pad",
+      "cannot_connect": "Verbinding maken mislukt",
+      "invalid_auth": "Ongeldige inloggegevens",
+      "unknown": "Onverwachte fout"
+    },
+    "abort": {
+      "already_configured": "Apparaat is al geconfigureerd"
+    }
+  }
+}
