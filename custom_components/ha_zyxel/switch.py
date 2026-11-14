@@ -11,9 +11,9 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from custom_components.ha_zyxel.api import set_port_forward_enabled, set_wifi_enabled
-from custom_components.ha_zyxel.const import DOMAIN
-from custom_components.ha_zyxel.device_info import build_device_info
+from .api import set_port_forward_enabled, set_wifi_enabled
+from .const import DOMAIN
+from .device_info import build_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
