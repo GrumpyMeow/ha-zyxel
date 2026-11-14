@@ -10,44 +10,12 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-
-
-def _device_info_value(data: dict[str, Any], key: str) -> str | None:
-    """Return a device information value from nested or flattened data."""
-    value = data.get(f"device.DeviceInfo.{key}")
-    if value is None:
-        device_data = data.get("device")
-        if isinstance(device_data, dict):
-            device_info = device_data.get("DeviceInfo")
-            if isinstance(device_info, dict):
-                value = device_info.get(key)
-
-    if isinstance(value, str):
-        return value.strip() or None
-    if isinstance(value, (int, float)):
-        return str(value)
-    return None
+from .device_info import build_device_info
 
 
 def get_main_device_info(entry: ConfigEntry, data: dict[str, Any]) -> DeviceInfo:
     """Build the router device information from its DeviceInfo sensors."""
-    device_info: DeviceInfo = DeviceInfo(
-        identifiers={(DOMAIN, entry.entry_id)},
-        name=f"Zyxel ({entry.data['host']})",
-        manufacturer=_device_info_value(data, "Manufacturer") or "Zyxel",
-        model=_device_info_value(data, "ModelName") or "",
-        configuration_url=entry.data["host"],
-    )
-
-    for field, key in (
-        ("serial_number", "SerialNumber"),
-        ("sw_version", "SoftwareVersion"),
-        ("hw_version", "HardwareVersion"),
-    ):
-        if value := _device_info_value(data, key):
-            device_info[field] = value
-
-    return device_info
+    return build_device_info(entry, data)
 
 
 def get_parent_device_id(
