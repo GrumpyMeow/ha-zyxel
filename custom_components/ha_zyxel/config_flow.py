@@ -56,22 +56,30 @@ def _normalize_host(host: str) -> str | None:
 async def validate_input(hass: core.HomeAssistant, data):
     """Validate that the user input allows us to connect."""
     try:
-        from nr7101 import nr7101
+        from .api import (
+            ZyxelAuthenticationError,
+            ZyxelConnectionError,
+            authenticate,
+            create_router,
+            fetch_status,
+        )
+    except ImportError as ex:
+        _LOGGER.debug("Zyxel API dependency unavailable: %s", type(ex).__name__)
+        raise CannotConnect from ex
 
+    try:
         router = await hass.async_add_executor_job(
-            nr7101.NR7101,
+            create_router,
             data[CONF_HOST],
             data[CONF_USERNAME],
             data[CONF_PASSWORD],
         )
-
-        if not await hass.async_add_executor_job(router.login):
-            raise InvalidAuth
-
-        if not await hass.async_add_executor_job(router.get_status):
-            raise CannotConnect
-    except (InvalidAuth, CannotConnect):
-        raise
+        await hass.async_add_executor_job(authenticate, router)
+        await hass.async_add_executor_job(fetch_status, router)
+    except ZyxelAuthenticationError as ex:
+        raise InvalidAuth from ex
+    except (ZyxelConnectionError, CannotConnect):
+        raise CannotConnect
     except Exception as ex:
         _LOGGER.debug("Zyxel connection check failed: %s", type(ex).__name__)
         raise CannotConnect from ex
