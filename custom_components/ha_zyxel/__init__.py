@@ -23,7 +23,7 @@ _LOGGER = logging.getLogger(__name__)
 nr7101_logger = logging.getLogger("nr7101.nr7101")
 nr7101_logger.setLevel(logging.WARNING)
 
-PLATFORMS = ["sensor", "binary_sensor", "button"]
+PLATFORMS = ["sensor", "binary_sensor", "button", "switch"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -35,10 +35,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     password = entry.data[CONF_PASSWORD]
 
     try:
-        from nr7101 import nr7101
+        from .api import create_router, fetch_status
 
         router = await hass.async_add_executor_job(
-            nr7101.NR7101, endpoint, username, password
+            create_router, endpoint, username, password
         )
     except Exception as ex:
         _LOGGER.error("Could not connect to Zyxel router: %s", ex)
@@ -48,26 +48,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         """Fetch data from the router."""
         try:
             async with async_timeout.timeout(15):
-                def get_all_data():
-                    data = router.get_status()
-
-                    if not data:
-                        raise UpdateFailed("No data received from router")
-
-                    # Get device info if not already in data
-                    if "device" not in data or not data["device"]:
-                        device_info = router.get_json_object("status")
-                        if device_info:
-                            data["device_info"] = device_info
-
-                    return data
-
-                return await hass.async_add_executor_job(get_all_data)
+                return await hass.async_add_executor_job(fetch_status, router)
         except asyncio.TimeoutError:
-            router._session_valid = False
             raise UpdateFailed("Router data fetch timed out")
         except Exception as err:
-            router._session_valid = False
             raise UpdateFailed(f"Error communicating with router: {err}") from err
 
     coordinator = DataUpdateCoordinator(
