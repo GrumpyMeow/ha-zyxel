@@ -11,6 +11,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import UnitOfInformation
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -144,6 +145,8 @@ KNOWN_SENSORS = {
     "BytesSent": {
         "name": "Bytes Sent",
         "unit": "B",
+        "suggested_unit": UnitOfInformation.MEGABYTES,
+        "suggested_display_precision": 1,        
         "icon": "mdi:numeric-10-box",
         "device_class": SensorDeviceClass.DATA_SIZE,
         "state_class": SensorStateClass.TOTAL_INCREASING,
@@ -151,6 +154,8 @@ KNOWN_SENSORS = {
     "BytesReceived": {
         "name": "Bytes Received",
         "unit": "B",
+        "suggested_unit": UnitOfInformation.MEGABYTES,
+        "suggested_display_precision": 1,        
         "icon": "mdi:numeric-10-box",
         "device_class": SensorDeviceClass.DATA_SIZE,
         "state_class": SensorStateClass.TOTAL_INCREASING,
@@ -352,6 +357,11 @@ class ConfiguredZyxelSensor(AbstractZyxelSensor):
         self._config = config
         self._attr_name = _readable_name(key, config["name"])
         self._attr_native_unit_of_measurement = config["unit"]
+        if suggested_unit := config.get("suggested_unit"):
+            self._attr_suggested_unit_of_measurement = suggested_unit
+            self._attr_suggested_display_precision = config.get(
+                "suggested_display_precision"
+            )
         self._attr_icon = config["icon"]
         self._attr_device_class = config["device_class"]
         self._attr_state_class = config["state_class"]
